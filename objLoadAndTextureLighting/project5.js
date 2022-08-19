@@ -1,141 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////////
-// Below is the core WebGL initialization code.
-///////////////////////////////////////////////////////////////////////////////////
-var boxDrawer;
-var meshDrawer;
-var canvas, gl;
-var perspectiveMatrix;	// perspective projection matrix
-var rotX=0, rotY=0, transZ=3, autorot=0;
-
-// Called once to initialize
-function InitWebGL()
-{
-	// Initialize the WebGL canvas
-	canvas = document.getElementById("canvas");
-	canvas.oncontextmenu = function() {return false;};
-	gl = canvas.getContext("webgl", {antialias: false, depth: true});	// Initialize the GL context
-	if (!gl) {
-		alert("Unable to initialize WebGL. Your browser or machine may not support it.");
-		return;
-	}
-	
-	// Initialize settings
-	gl.clearColor(0,255,255,0);
-	gl.enable(gl.DEPTH_TEST);
-	
-	// Initialize the programs and buffers for drawing
-	boxDrawer  = new BoxDrawer();
-	meshDrawer = new MeshDrawer();
-	
-	// Set the viewport size
-	UpdateCanvasSize();
-}
-
-// Called every time the window size is changed.
-function UpdateCanvasSize()
-{
-	canvas.style.width  = "100%";
-	canvas.style.height = "100%";
-	const pixelRatio = window.devicePixelRatio || 1;
-	canvas.width  = pixelRatio * canvas.clientWidth;
-	canvas.height = pixelRatio * canvas.clientHeight;
-	const width  = (canvas.width  / pixelRatio);
-	const height = (canvas.height / pixelRatio);
-	canvas.style.width  = width  + 'px';
-	canvas.style.height = height + 'px';
-	gl.viewport( 0, 0, canvas.width, canvas.height );
-	UpdateProjectionMatrix();
-}
-
-function ProjectionMatrix( c, z, fov_angle=60 )
-{
-	var r = c.width / c.height;
-	var n = (z - 1.74);
-	const min_n = 0.001;
-	if ( n < min_n ) n = min_n;
-	var f = (z + 1.74);;
-	var fov = 3.145 * fov_angle / 180;
-	var s = 1 / Math.tan( fov/2 );
-	return [
-		s/r, 0, 0, 0,
-		0, s, 0, 0,
-		0, 0, (n+f)/(f-n), 1,
-		0, 0, -2*n*f/(f-n), 0
-	];
-}
-
-function UpdateProjectionMatrix()
-{
-	perspectiveMatrix = ProjectionMatrix( canvas, transZ );
-}
-
-// This is the main function that handled WebGL drawing
-function DrawScene()
-{
-	var mv  = GetModelViewMatrix( 0, 0, transZ, rotX, autorot+rotY );
-	var mvp = MatrixMult( perspectiveMatrix, mv );
-
-	// Clear the screen and the depth buffer.
-	gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
-	
-	// Draw the curve and then the line segments that connect the control points.
-	var nrmTrans = [ mv[0],mv[1],mv[2], mv[4],mv[5],mv[6], mv[8],mv[9],mv[10] ];
-	
-	meshDrawer.draw( mvp, mv, nrmTrans );
-	if ( showBox.checked ) {
-		boxDrawer.draw( mvp );
-	}
-}
-
-// This is a helper function for compiling the given vertex and fragment shader source code into a program.
-function InitShaderProgram( vsSource, fsSource, wgl=gl )
-{
-	const vs = CompileShader( wgl.VERTEX_SHADER,   vsSource, wgl );
-	const fs = CompileShader( wgl.FRAGMENT_SHADER, fsSource, wgl );
-
-	const prog = wgl.createProgram();
-	wgl.attachShader(prog, vs);
-	wgl.attachShader(prog, fs);
-	wgl.linkProgram(prog);
-
-	if (!wgl.getProgramParameter(prog, wgl.LINK_STATUS)) {
-		alert('Unable to initialize the shader program: ' + wgl.getProgramInfoLog(prog));
-		return null;
-	}
-	return prog;
-}
-
-// This is a helper function for compiling a shader, called by InitShaderProgram().
-function CompileShader( type, source, wgl=gl )
-{
-	const shader = wgl.createShader(type);
-	wgl.shaderSource(shader, source);
-	wgl.compileShader(shader);
-	if (!wgl.getShaderParameter( shader, wgl.COMPILE_STATUS) ) {
-		alert('An error occurred compiling shader:\n' + wgl.getShaderInfoLog(shader));
-		wgl.deleteShader(shader);
-		return null;
-	}
-	return shader;
-}
-// Multiplies two matrices and returns the result A*B.
-// The arguments A and B are arrays, representing column-major matrices.
-function MatrixMult( A, B )
-{
-	var C = [];
-	for ( var i=0; i<4; ++i ) {
-		for ( var j=0; j<4; ++j ) {
-			var v = 0;
-			for ( var k=0; k<4; ++k ) {
-				v += A[j+4*k] * B[k+4*i];
-			}
-			C.push(v);
-		}
-	}
-	return C;
-}
-
-// 
 function transposeMatrix(matrix){
 	let output = []; 
 	for(let col = 0; col < 4; col++){
@@ -206,12 +68,11 @@ class MeshDrawer
 		this.yzSwapLoc = gl.getUniformLocation(this.prog, 'yzSwap');
 
 		// fragment
-		this.showTexLoc = gl.getUniformLocation(this.prog, 'showTex');
-		this.lightDirLoc = gl.getUniformLocation(this.prog, 'lightDir');
-		this.lightColorLoc = gl.getUniformLocation(this.prog, 'lightColor');
-		this.specColorLoc = gl.getUniformLocation(this.prog, 'specColor');
-		this.lightIntensityLoc = gl.getUniformLocation(this.prog, 'lightIntensity');
-		this.phongExpoLoc = gl.getUniformLocation(this.prog, 'phongExpo');
+		this.showTexLoc = gl.getUniformLocation(this.prog, 'uShowTex');
+		this.lightDirLoc = gl.getUniformLocation(this.prog, 'uLightDir');
+		
+		this.lightIntensityLoc = gl.getUniformLocation(this.prog, 'uLightIntensity');
+		this.shinessLoc = gl.getUniformLocation(this.prog, 'uShiness');
 
 		// create array buffers
 		this.positionBuffer = gl.createBuffer(); 
@@ -340,9 +201,10 @@ class MeshDrawer
 
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAR_FILTER, gl.LINEAR); 
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAR_FILTER, gl.LINEAR_MIPMAP_LINEAR); 
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); 
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); 
-
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); 
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT); 
+		//gl.texParameteri(gl.TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+		//gl.texParameteri(gl.TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 		// [TO-DO] Now that we have a texture, it might be a good idea to set
 		// some uniform parameter(s) of the fragment shader, so that it uses the texture.
 		gl.useProgram(this.prog); 
@@ -376,7 +238,7 @@ class MeshDrawer
 	{
 		// [TO-DO] set the uniform parameter(s) of the fragment shader to specify the shininess.
 		gl.useProgram(this.prog); 
-		gl.uniform1f(this.phongExpoLoc, shininess);
+		gl.uniform1f(this.shinessLoc, shininess);
 	}
 
 	setLightIntensity(intensity){
@@ -397,18 +259,18 @@ class MeshDrawer
 }
 
 const meshVS = `
-	// vertex attributes 
+	
 	attribute vec3 position; 
 	attribute vec3 normal; 
 	attribute vec2 texCoord; 
 
-	// input uniforms 
+	
 	uniform mat4 mvp;
 	uniform mat4 mv; 
 	uniform mat3 normalMV; 
 	uniform mat4 yzSwap; 
 
-	// outputs to fragment shader
+	
 	varying vec2 v_texCoord; 
 	varying vec3 v_viewNormal; 
 	varying vec4 v_viewFragPos; 
@@ -425,48 +287,47 @@ const meshVS = `
 const meshFS = `
 	precision mediump float;
 
-	// input uniforms 
-	uniform bool showTex;
-	uniform vec3 lightDir;
-	uniform vec3 lightColor;
-	uniform vec3 specColor;
-	uniform float lightIntensity;
-	uniform float phongExpo;
+	
+	uniform bool uShowTex;
+	uniform vec3 uLightDir;
+	uniform vec3 uLightColor;
+	uniform vec3 uSpecColor;
+	uniform float uLightIntensity;
+	uniform float uShiness;
 
 	uniform sampler2D tex;
 
-	// inputs from vertex shader
+	
 	varying vec2 v_texCoord; 
 	varying vec3 v_viewNormal;
 	varying vec4 v_viewFragPos; 
 
 	void main(){
 
-		vec4 diffuseColor = vec4(1.0); // Cr
-		if(showTex){
-			diffuseColor = texture2D(tex, v_texCoord);
+		vec4 kd = vec4(1.0); 
+		if(uShowTex){
+			kd = texture2D(tex, v_texCoord);
 		}else{
-			diffuseColor =  vec4(1.0, 0.1, 0.1, 1.0);
+			kd =  vec4(1.0, 0.1, 0.1, 1.0);
 		}
 
-		// dot product between normalized normal and lightDir vectors results 
-		// in cos(theta) where theta is the angle between the two vectors 
-		float geometryTerm = max(0.0,dot(normalize(v_viewNormal), normalize(lightDir))); 
+		vec3 Il = vec3 (1,1,1);
+		vec3 ks = vec3(0.7,0.7,0.7);
+		
+		float dif = max(0.0,dot(normalize(v_viewNormal), normalize(uLightDir))); 
 
-		vec4 lightingColor = lightIntensity * vec4(lightColor, 1.0); // Cl
-		vec4 ambientColor =  lightIntensity * vec4(0.1,0.1,0.1,1.0); // Ca
+		vec4 lightingColor = uLightIntensity * vec4(Il, 1.0); 
+		vec4 ambientColor =  uLightIntensity * vec4(0.1,0.1,0.1,1.0); 
 
-		vec4 diffuseLighting = diffuseColor * (ambientColor + (lightingColor * geometryTerm));
+		vec4 diffuseLighting = kd * (ambientColor + (lightingColor * dif));
 
 		vec3 viewDir = normalize(vec3(v_viewFragPos) - vec3(0.0));
-		vec3 halfAngle = normalize(lightDir + viewDir);
+		vec3 halfAngle = normalize(uLightDir + viewDir);
 
-		float cosOmega = max(0.0, dot(halfAngle, normalize(v_viewNormal)));
-		vec4 specularLighting = lightIntensity * vec4(specColor,1.0) *  vec4(lightColor, 1.0) * pow(cosOmega, phongExpo);
+		float spec =  pow( max(0.0, dot(halfAngle, normalize(v_viewNormal))), uShiness);
+		vec4 specularLighting = uLightIntensity * vec4(ks,1.0) *  vec4(Il, 1.0) * spec;
 
 		gl_FragColor = diffuseLighting + specularLighting;
-		// gl_FragColor = vec4(halfAngle,1.0);
-		// gl_FragColor = vec4(v_viewNormal,1.0);
+		
 	}
 `;
-

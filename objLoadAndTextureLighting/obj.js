@@ -25,10 +25,11 @@ class ObjMesh
 		xhttp.send();
 	}
 	
-	// Parses the contents of an obj file.
+	// Parses the contents of an obj file.ds
 	parse( objdata )
 	{
 		var lines = objdata.split('\n');
+		var u,v;
 		for ( var i=0; i<lines.length; ++i ) {
 			var line = lines[i].trim();
 			var elem = line.split(/\s+/);
@@ -41,7 +42,27 @@ class ObjMesh
 						case 2:
 							switch ( elem[0][1] ) {
 								case 't':
-									this.tpos.push( [ parseFloat(elem[1]), parseFloat(elem[2]) ] );
+									/*
+									if( parseFloat(elem[1])>1.0 || parseFloat(elem[2])>1.0) 
+									{
+										 u = parseFloat(elem[1]) /2.0;
+										 v=parseFloat(elem[2]) /2.0;
+									}
+									else{
+										
+									}
+									*/
+
+									/*									
+									if( parseFloat(elem[1])>1.0 ) u = parseFloat(elem[1])-1.0;
+									else u = parseFloat(elem[1]);
+									if( parseFloat(elem[2])>1.0 ) u = parseFloat(elem[2])-1.0;
+									else v = parseFloat(elem[2]);
+									*/
+									u= parseFloat(elem[1]);
+									v=parseFloat(elem[2]);
+							
+									this.tpos.push( [ u, v]);
 									break;
 								case 'n':
 									this.norm.push( [ parseFloat(elem[1]), parseFloat(elem[2]), parseFloat(elem[3]) ] );
